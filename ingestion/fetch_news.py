@@ -16,13 +16,14 @@ Required environment variables (loaded from a .env file in the project root):
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+import os
+import uuid
 from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from storage import get_required_env, upload_json_file
+from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
 # News API "everything" endpoint and the query that defines our topics.
 # Quoted phrases + searchIn=title,description keep results on-topic (the
@@ -31,6 +32,11 @@ NEWS_API_URL = "https://newsapi.org/v2/everything"
 QUERY = '"solar energy" OR "electric vehicle" OR "nuclear energy"'
 PAGE_SIZE = 100  # max allowed on the News API free tier
 
+# Fixed namespace for deterministic record IDs. A stable GUID per article means
+# re-runs upsert the same Dataverse row (Upsert is the only write behavior the
+# connector supports), so the pipeline is idempotent.
+ID_NAMESPACE = uuid.UUID("5b8e7e2a-1f3c-4a6b-9d0e-7c2a4f6b8d1e")
+
 # Keyword -> topic label, checked in order. First match wins.
 TOPIC_KEYWORDS = [
     ("solar", ["solar"]),
@@ -38,8 +44,13 @@ TOPIC_KEYWORDS = [
     ("nuclear", ["nuclear"]),
 ]
 
-# Local landing zone for the JSON file before it is uploaded.
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "news"
+# Local staging dir for the JSON before upload. Overridable via DATA_DIR so the
+# Azure Function can write to a writable temp path (the app folder is read-only).
+DATA_DIR = (
+    Path(os.environ["DATA_DIR"]) / "news"
+    if os.getenv("DATA_DIR")
+    else Path(__file__).resolve().parent.parent / "data" / "news"
+)
 
 
 def classify_topic(text: str) -> str:
@@ -92,13 +103,18 @@ def score_articles(articles: list[dict]) -> list[dict]:
     for article in articles:
         title = article.get("title") or ""
         description = article.get("description") or ""
+        url = article.get("url") or ""
 
         # Score title + description together for a fuller sentiment signal.
         text = f"{title}. {description}".strip()
         compound = analyzer.polarity_scores(text)["compound"]
 
+        # Deterministic GUID (from the URL) so re-runs upsert the same row.
+        record_id = str(uuid.uuid5(ID_NAMESPACE, url or title))
+
         scored.append(
             {
+                "id": record_id,
                 "title": title,
                 "description": description,
                 "source": (article.get("source") or {}).get("name"),
@@ -106,7 +122,7 @@ def score_articles(articles: list[dict]) -> list[dict]:
                 "sentiment_compound": compound,
                 "sentiment_label": sentiment_label(compound),
                 "published_at": article.get("publishedAt"),
-                "url": article.get("url"),
+                "url": url,
             }
         )
 
@@ -114,10 +130,14 @@ def score_articles(articles: list[dict]) -> list[dict]:
 
 
 def save_local(scored: list[dict]) -> Path:
-    """Write the scored articles to a timestamped JSON file under /data/news."""
+    """Write the scored articles to a single JSON file under /data/news.
+
+    A fixed filename (overwritten each run) keeps exactly one file in the
+    news/ blob prefix, so the ADF pipeline never reprocesses a growing pile.
+    Dataverse still accumulates history via idempotent upserts on the GUIDs.
+    """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    out_path = DATA_DIR / f"news_sentiment_{timestamp}.json"
+    out_path = DATA_DIR / "news_latest.json"
     out_path.write_text(
         json.dumps(scored, indent=2, ensure_ascii=False), encoding="utf-8"
     )

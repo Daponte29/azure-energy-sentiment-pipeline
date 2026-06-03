@@ -30,10 +30,11 @@ Pipfile.lock
 /data/*
 !/data/.gitkeep
 
-# VS Code / IDE
+# VS Code / IDE / tooling
 .vscode/*
 !.vscode/launch.json
 .idea/
+.claude/
 
 # OS Generated Files
 .DS_Store
@@ -50,6 +51,10 @@ Thumbs.db
 .terraform/
 *.tfvars
 !*.tfvars.example
+
+# CI / function build artifacts
+package.zip
+build/
 
 # Logs
 *.log

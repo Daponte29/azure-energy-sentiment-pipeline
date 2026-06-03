@@ -1,0 +1,46 @@
+name: Deploy Function (ingestion)
+
+# Deploys the Python ingestion code to the Azure Function App when the function
+# code or the ingestion scripts change on main.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "functionapp/**"
+      - "ingestion/**"
+      - ".github/workflows/deploy-function.yml"
+  workflow_dispatch:
+
+permissions:
+  id-token: write   # required for OIDC federation to Azure
+  contents: read
+
+env:
+  RESOURCE_GROUP: rg-energynews
+  FUNCTION_APP: func-energynews-1eelzy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build deployment package
+        run: |
+          mkdir -p build
+          cp functionapp/function_app.py functionapp/host.json functionapp/requirements.txt build/
+          cp ingestion/fetch_news.py ingestion/fetch_co2.py ingestion/storage.py build/
+          cd build && zip -r ../package.zip . && cd ..
+
+      - name: Deploy to Azure Functions
+        run: |
+          az functionapp deployment source config-zip \
+            -g "$RESOURCE_GROUP" -n "$FUNCTION_APP" \
+            --src package.zip --build-remote true --timeout 600

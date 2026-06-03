@@ -19,9 +19,10 @@ Required environment variables (loaded from a .env file in the project root):
 from __future__ import annotations
 
 import json
+import os
 import time
+import uuid
 from collections import defaultdict
-from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -41,13 +42,21 @@ YEARS = list(range(2019, 2024))  # 2019..2023 inclusive
 # returned and stops on an empty page, so this is safe even if EPA caps lower.
 PAGE_SIZE = 10000
 MAX_PAGES = 1000  # safety valve against an unexpected infinite loop
-MAX_RETRIES = 5   # transient network/DNS failures are common on long pulls
-RETRY_BACKOFF = 2.0  # seconds, multiplied by attempt number
+MAX_RETRIES = 12  # this machine's DNS to data.epa.gov drops for minutes at a time
+RETRY_BACKOFF = 5.0  # seconds * attempt, capped below, to outlast longer outages
 
 EMISSION_UNIT = "metric tons CO2e"
 SOURCE_LABEL = "EPA Envirofacts GHGRP"
 
-DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "co2"
+# Fixed namespace for deterministic record IDs (state|sector|year -> stable GUID),
+# so re-runs upsert the same Dataverse row instead of duplicating.
+ID_NAMESPACE = uuid.UUID("5b8e7e2a-1f3c-4a6b-9d0e-7c2a4f6b8d1e")
+
+DATA_DIR = (
+    Path(os.environ["DATA_DIR"]) / "co2"
+    if os.getenv("DATA_DIR")
+    else Path(__file__).resolve().parent.parent / "data" / "co2"
+)
 
 
 def get_json(url: str) -> list:
@@ -61,7 +70,7 @@ def get_json(url: str) -> list:
         except requests.exceptions.RequestException as error:
             last_error = error
             if attempt < MAX_RETRIES:
-                wait = RETRY_BACKOFF * attempt
+                wait = min(RETRY_BACKOFF * attempt, 30)
                 print(f"  request failed ({error.__class__.__name__}); "
                       f"retry {attempt}/{MAX_RETRIES - 1} in {wait:.0f}s")
                 time.sleep(wait)
@@ -153,6 +162,7 @@ def aggregate(
     for (state, state_name, sector, year), agg in buckets.items():
         records.append(
             {
+                "id": str(uuid.uuid5(ID_NAMESPACE, f"{state}|{sector}|{year}")),
                 "state": state,
                 "state_name": state_name,
                 "sector": sector,
@@ -171,10 +181,13 @@ def aggregate(
 
 
 def save_local(records: list[dict]) -> Path:
-    """Write the aggregated records to a timestamped JSON file under /data/co2."""
+    """Write the aggregated records to a single JSON file under /data/co2.
+
+    Fixed filename (overwritten each run) keeps one file in the co2/ prefix so
+    ADF reads a single snapshot; Dataverse retains history via GUID upserts.
+    """
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    out_path = DATA_DIR / f"co2_emissions_{timestamp}.json"
+    out_path = DATA_DIR / "co2_latest.json"
     out_path.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
     print(f"Saved {len(records)} aggregated records to {out_path}")
     return out_path
