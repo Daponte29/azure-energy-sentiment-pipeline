@@ -1,34 +1,27 @@
-"""Fetch EPA GHG emissions data, aggregate it, and land it in Azure Blob Storage.
+"""Extract step (Bronze) — fetch raw EPA GHGRP data and land each table as-is.
 
-Pipeline step 1 (CO2 source) of the Energy News Sentiment Pipeline:
-    EPA Envirofacts  ->  clean + aggregate  ->  local /data/co2 JSON  ->  Blob (co2/)
+Source: EPA Envirofacts GHG Reporting Program (keyless REST API). Lands three
+raw datasets in Bronze, untouched:
+    co2_facts     - emission fact rows (facility x gas x subsector x year)
+    co2_facility  - facility dimension (facility_id -> state)
+    co2_sector    - sector dimension (sector_id   -> sector_name)
 
-Source: EPA Envirofacts GHG Reporting Program (keyless REST API).
-    fact:      ghg.pub_facts_sector_ghg_emission  (facility x gas x subsector x year)
-    facility:  ghg.pub_dim_facility               (facility_id -> state)
-    sector:    ghg.pub_dim_sector                 (sector_id   -> sector_name)
+Joining, aggregating to (state x sector x year), and ID generation all happen
+later in the Silver transform. Bronze stays a faithful, replayable copy.
 
-Output grain: one record per (state x sector x year), summing co2e_emission across
-all gases (CO2-equivalent). Matches the Dataverse `co2_emissions` table.
-
-Required environment variables (loaded from a .env file in the project root):
+Required environment variables (from a .env file in the project root):
     AZURE_STORAGE_CONNECTION_STRING
     AZURE_CONTAINER_NAME
 """
 
 from __future__ import annotations
 
-import json
-import os
 import time
-import uuid
-from collections import defaultdict
-from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 
-from storage import upload_json_file
+from storage import write_bronze
 
 EFSERVICE_BASE = "https://data.epa.gov/efservice"
 FACT_TABLE = "ghg.pub_facts_sector_ghg_emission"
@@ -44,19 +37,6 @@ PAGE_SIZE = 10000
 MAX_PAGES = 1000  # safety valve against an unexpected infinite loop
 MAX_RETRIES = 12  # this machine's DNS to data.epa.gov drops for minutes at a time
 RETRY_BACKOFF = 5.0  # seconds * attempt, capped below, to outlast longer outages
-
-EMISSION_UNIT = "metric tons CO2e"
-SOURCE_LABEL = "EPA Envirofacts GHGRP"
-
-# Fixed namespace for deterministic record IDs (state|sector|year -> stable GUID),
-# so re-runs upsert the same Dataverse row instead of duplicating.
-ID_NAMESPACE = uuid.UUID("5b8e7e2a-1f3c-4a6b-9d0e-7c2a4f6b8d1e")
-
-DATA_DIR = (
-    Path(os.environ["DATA_DIR"]) / "co2"
-    if os.getenv("DATA_DIR")
-    else Path(__file__).resolve().parent.parent / "data" / "co2"
-)
 
 
 def get_json(url: str) -> list:
@@ -96,34 +76,8 @@ def fetch_all_rows(path: str) -> list[dict]:
     return rows
 
 
-def build_facility_state_map() -> dict[int, dict]:
-    """Map facility_id -> {state, state_name}, deduped across reporting years."""
-    facilities = fetch_all_rows(FACILITY_TABLE)
-    mapping: dict[int, dict] = {}
-    for f in facilities:
-        fid = f.get("facility_id")
-        if fid is None:
-            continue
-        # State is stable per facility; keep the first non-null we see.
-        if fid not in mapping or not mapping[fid].get("state"):
-            mapping[fid] = {
-                "state": f.get("state"),
-                "state_name": f.get("state_name"),
-            }
-    print(f"Loaded {len(mapping)} facilities.")
-    return mapping
-
-
-def build_sector_name_map() -> dict[int, str]:
-    """Map sector_id -> sector_name."""
-    sectors = fetch_all_rows(SECTOR_TABLE)
-    mapping = {s["sector_id"]: s.get("sector_name") for s in sectors if "sector_id" in s}
-    print(f"Loaded {len(mapping)} sectors.")
-    return mapping
-
-
 def fetch_fact_rows() -> list[dict]:
-    """Fetch all emission fact rows for the configured years."""
+    """Fetch all raw emission fact rows for the configured years."""
     all_rows: list[dict] = []
     for year in YEARS:
         year_rows = fetch_all_rows(f"{FACT_TABLE}/year/equals/{year}")
@@ -132,83 +86,23 @@ def fetch_fact_rows() -> list[dict]:
     return all_rows
 
 
-def aggregate(
-    fact_rows: list[dict],
-    facility_state: dict[int, dict],
-    sector_name: dict[int, str],
-) -> list[dict]:
-    """Sum co2e_emission by (state, sector, year) across all gases."""
-    # key -> {"co2e": float, "facilities": set[int]}
-    buckets: dict[tuple, dict] = defaultdict(lambda: {"co2e": 0.0, "facilities": set()})
-
-    for row in fact_rows:
-        fid = row.get("facility_id")
-        sector_id = row.get("sector_id")
-        year = row.get("year")
-        emission = row.get("co2e_emission")
-        if emission is None:
-            continue
-
-        loc = facility_state.get(fid, {})
-        state = loc.get("state")
-        state_name = loc.get("state_name")
-        sector = sector_name.get(sector_id)
-
-        key = (state, state_name, sector, year)
-        buckets[key]["co2e"] += float(emission)
-        buckets[key]["facilities"].add(fid)
-
-    records: list[dict] = []
-    for (state, state_name, sector, year), agg in buckets.items():
-        records.append(
-            {
-                "id": str(uuid.uuid5(ID_NAMESPACE, f"{state}|{sector}|{year}")),
-                "state": state,
-                "state_name": state_name,
-                "sector": sector,
-                "co2e_emission": round(agg["co2e"], 3),
-                "emission_unit": EMISSION_UNIT,
-                "facility_count": len(agg["facilities"]),
-                "year": year,
-                "recorded_at": f"{year}-01-01T00:00:00Z",
-                "source": SOURCE_LABEL,
-            }
-        )
-
-    # Stable, readable ordering: year, then state, then sector.
-    records.sort(key=lambda r: (r["year"], r["state"] or "", r["sector"] or ""))
-    return records
-
-
-def save_local(records: list[dict]) -> Path:
-    """Write the aggregated records to a single JSON file under /data/co2.
-
-    Fixed filename (overwritten each run) keeps one file in the co2/ prefix so
-    ADF reads a single snapshot; Dataverse retains history via GUID upserts.
-    """
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    out_path = DATA_DIR / "co2_latest.json"
-    out_path.write_text(json.dumps(records, indent=2, ensure_ascii=False), encoding="utf-8")
-    print(f"Saved {len(records)} aggregated records to {out_path}")
-    return out_path
-
-
 def main() -> None:
     load_dotenv()
 
-    print(f"Fetching EPA GHG facts for years {YEARS[0]}-{YEARS[-1]}...")
-    facility_state = build_facility_state_map()
-    sector_name = build_sector_name_map()
-    fact_rows = fetch_fact_rows()
-    print(f"Total fact rows: {len(fact_rows)}")
+    print(f"Fetching EPA GHGRP raw data for years {YEARS[0]}-{YEARS[-1]}...")
 
-    records = aggregate(fact_rows, facility_state, sector_name)
-    if not records:
-        print("No records produced; nothing to upload.")
-        return
+    facilities = fetch_all_rows(FACILITY_TABLE)
+    print(f"Fetched {len(facilities)} facility rows.")
+    write_bronze(facilities, dataset="co2_facility")
 
-    out_path = save_local(records)
-    upload_json_file(out_path, prefix="co2")
+    sectors = fetch_all_rows(SECTOR_TABLE)
+    print(f"Fetched {len(sectors)} sector rows.")
+    write_bronze(sectors, dataset="co2_sector")
+
+    facts = fetch_fact_rows()
+    print(f"Fetched {len(facts)} total fact rows.")
+    write_bronze(facts, dataset="co2_facts")
+
     print("Done.")
 
 
