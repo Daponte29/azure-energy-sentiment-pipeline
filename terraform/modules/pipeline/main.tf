@@ -29,8 +29,9 @@ resource "azurerm_resource_group" "rg" {
   tags     = var.tags
 }
 
-# Raw data landing zone. Standard tier + LRS (cheapest redundancy) + Hot access
-# tier so Data Factory can read the JSON without rehydration costs.
+# Raw data landing zone — ADLS Gen2 (a data lake), the Bronze/Silver store.
+# Standard tier + LRS (cheapest redundancy) + Hot access tier so Data Factory
+# can read the JSON without rehydration costs.
 resource "azurerm_storage_account" "sa" {
   name                     = "st${var.project_name}${random_string.suffix.result}"
   resource_group_name      = azurerm_resource_group.rg.name
@@ -40,6 +41,13 @@ resource "azurerm_storage_account" "sa" {
   account_kind             = "StorageV2"
   access_tier              = "Hot"
   min_tls_version          = "TLS1_2"
+
+  # Hierarchical namespace = ADLS Gen2: real nested directories (not just blob
+  # prefixes), atomic folder renames, and POSIX ACLs — the lake layer the
+  # medallion (Bronze/Silver) is built on. NOTE: this can't be toggled on an
+  # existing account, so changing it forces a destroy+recreate of the storage
+  # account. Harmless in our ephemeral dev; never do this casually in prod.
+  is_hns_enabled = true
 
   # Keep it locked down for a demo: no anonymous blob access.
   allow_nested_items_to_be_public = false
