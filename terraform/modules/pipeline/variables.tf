@@ -1,7 +1,11 @@
-variable "subscription_id" {
-  description = "Azure subscription ID. Leave empty to use the ARM_SUBSCRIPTION_ID environment variable instead."
+variable "environment" {
+  description = "Deployment environment (e.g. dev, prod). Suffixes resource names and tags so environments stay isolated."
   type        = string
-  default     = null
+
+  validation {
+    condition     = can(regex("^[a-z0-9]{2,8}$", var.environment))
+    error_message = "environment must be 2-8 lowercase alphanumeric characters (used in resource names)."
+  }
 }
 
 variable "project_name" {

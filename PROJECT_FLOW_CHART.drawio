@@ -1,0 +1,91 @@
+<mxfile host="65bd71144e">
+    <diagram id="energy-sentiment-medallion" name="Pipeline (Medallion)">
+        <mxGraphModel dx="664" dy="598" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="n_news" value="News API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="40" width="170" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_epa" value="EPA Envirofacts GHGRP API" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="370" y="40" width="230" height="50" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_extract" value="Azure Function (Python)&lt;br&gt;&lt;b&gt;EXTRACT&lt;/b&gt; - fetch raw, no transform&lt;br&gt;(timer-triggered)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="160" y="140" width="380" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_bronze" value="ADLS Gen2 - &lt;b&gt;BRONZE&lt;/b&gt;&lt;br&gt;raw JSON, immutable, date-partitioned&lt;br&gt;(exact API response, never edited)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="170" y="250" width="360" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_transform" value="Azure Function (Python)&lt;br&gt;&lt;b&gt;TRANSFORM&lt;/b&gt; - clean, dedupe,&lt;br&gt;VADER score, aggregate" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="160" y="360" width="380" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_silver" value="ADLS Gen2 - &lt;b&gt;SILVER&lt;/b&gt;&lt;br&gt;Delta (delta-rs) / Parquet&lt;br&gt;deduped, one row per key (MERGE)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="170" y="480" width="360" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_dataverse" value="Dataverse (serving)&lt;br&gt;cp_climatenews , cp_co2emission" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="190" y="590" width="320" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_pbi" value="Power BI&lt;br&gt;dashboard" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="700" width="170" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_discord" value="Power Automate -&gt; Discord&lt;br&gt;alert if value over threshold" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="370" y="695" width="270" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_adf" value="Azure Data Factory&lt;br&gt;(orchestrator)&lt;br&gt;&lt;br&gt;triggers transform&lt;br&gt;+ load to Dataverse" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#b0e3e6;strokeColor=#0e8088;fontSize=12;" parent="1" vertex="1">
+                    <mxGeometry x="610" y="360" width="180" height="190" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_kv" value="Key Vault&lt;br&gt;secrets (API key,&lt;br&gt;Discord webhook)" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="610" y="140" width="180" height="70" as="geometry"/>
+                </mxCell>
+                <mxCell id="n_cicd" value="Terraform module -&gt; environments/dev &amp; prod   |   GitHub Actions CI/CD (OIDC): feature branch -&gt; apply dev -&gt; PR -&gt; merge main -&gt; apply prod" style="rounded=1;whiteSpace=wrap;html=1;dashed=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;" parent="1" vertex="1">
+                    <mxGeometry x="120" y="810" width="670" height="60" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_news_extract" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;" parent="1" source="n_news" target="n_extract" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_epa_extract" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;" parent="1" source="n_epa" target="n_extract" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_extract_bronze" value="raw JSON" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=10;" parent="1" source="n_extract" target="n_bronze" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_bronze_transform" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;" parent="1" source="n_bronze" target="n_transform" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_transform_silver" value="Delta / Parquet" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=10;" parent="1" source="n_transform" target="n_silver" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_silver_dataverse" value="upsert on GUID" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;fontSize=10;" parent="1" source="n_silver" target="n_dataverse" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_dataverse_pbi" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;" parent="1" source="n_dataverse" target="n_pbi" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_dataverse_discord" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;endFill=1;strokeWidth=1.5;" parent="1" source="n_dataverse" target="n_discord" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="350" y="678"/>
+                            <mxPoint x="520" y="678"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+                <mxCell id="e_adf_transform" value="orchestrates" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;dashed=1;strokeWidth=1;fontSize=10;" parent="1" source="n_adf" target="n_transform" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_adf_dataverse" value="copy / map" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;dashed=1;strokeWidth=1;fontSize=10;" parent="1" source="n_adf" target="n_dataverse" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_kv_extract" value="secret" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;dashed=1;strokeWidth=1;fontSize=10;" parent="1" source="n_kv" target="n_extract" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="e_kv_transform" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;dashed=1;strokeWidth=1;fontSize=10;" parent="1" source="n_kv" target="n_transform" edge="1">
+                    <mxGeometry relative="1" as="geometry">
+                        <Array as="points">
+                            <mxPoint x="350" y="175"/>
+                        </Array>
+                    </mxGeometry>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>

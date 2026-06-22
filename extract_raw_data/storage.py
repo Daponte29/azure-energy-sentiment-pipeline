@@ -1,6 +1,6 @@
 """Shared helpers for landing JSON files in Azure Blob Storage.
 
-Both ingestion scripts (fetch_news.py, fetch_co2.py) write to the same
+Both extract scripts (fetch_news.py, fetch_co2.py) write to the same
 container under different prefixes (news/, co2/), mirroring the /raw/news/ and
 /raw/co2/ layout in the pipeline design.
 """

@@ -14,8 +14,9 @@ News API ─┐                                   ┌─ Power Automate → Disc
 EPA API ──┘   → Blob Storage                              └─ Power BI dashboard
 ```
 
-- **Ingestion** (`ingestion/`): Python scripts pull articles (scored with VADER) and EPA
-  GHG data (aggregated by state × sector × year), then upload JSON to Blob Storage.
+- **Extract raw data** (`extract_raw_data/`): Python scripts pull articles (scored with
+  VADER) and EPA GHG data (aggregated by state × sector × year), then upload JSON to Blob
+  Storage.
 - **Serverless** (`functionapp/`): an Azure Function runs the scripts on a schedule
   (news hourly, CO₂ monthly).
 - **Orchestration**: two Azure Data Factory pipelines load Blob → Dataverse (idempotent
@@ -35,7 +36,7 @@ All Azure infrastructure is defined in Terraform (`terraform/`) with remote stat
 GitHub Actions deploys on push:
 
 - changes under `terraform/**` → `terraform apply`
-- changes under `ingestion/**` or `functionapp/**` → deploy to the Function App
+- changes under `extract_raw_data/**` or `functionapp/**` → deploy to the Function App
 
 Authentication to Azure uses OIDC federation (no stored credentials); secrets live in
 Key Vault.
@@ -43,9 +44,9 @@ Key Vault.
 ## Repo layout
 
 ```
-ingestion/      fetch_news.py, fetch_co2.py, storage.py
-functionapp/    Azure Functions timer triggers
-terraform/      Azure infrastructure as code
-dataverse/      Web API scripts to create the Dataverse tables
-.github/        CI/CD workflows
+extract_raw_data/   fetch_news.py, fetch_co2.py, storage.py
+functionapp/        Azure Functions timer triggers
+terraform/          Azure infrastructure as code
+dataverse/          Web API scripts to create the Dataverse tables
+.github/            CI/CD workflows
 ```

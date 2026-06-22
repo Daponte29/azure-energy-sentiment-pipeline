@@ -1,3 +1,6 @@
+# A module declares the providers it REQUIRES, but must not configure them
+# (no `provider` block) or a backend. The calling environment (environments/dev,
+# environments/prod) owns the provider config + subscription_id + remote state.
 terraform {
   required_version = ">= 1.5"
 
@@ -11,12 +14,4 @@ terraform {
       version = "~> 3.6"
     }
   }
-}
-
-provider "azurerm" {
-  features {}
-
-  # subscription_id is required by azurerm v4. Set it here via the variable,
-  # or export ARM_SUBSCRIPTION_ID in your shell before running terraform.
-  subscription_id = var.subscription_id
 }

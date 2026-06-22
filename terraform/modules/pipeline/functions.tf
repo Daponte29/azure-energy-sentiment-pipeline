@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-# Serverless ingestion — Azure Functions (the "Lambda equivalent").
+# Serverless raw-data extraction — Azure Functions (the "Lambda equivalent").
 # A timer-triggered Python Function App runs the fetch scripts on a schedule
 # (news hourly, CO2 monthly) and writes JSON to Blob. The Consumption (Y1)
 # plan is effectively free at this volume (1M executions/month free grant).
