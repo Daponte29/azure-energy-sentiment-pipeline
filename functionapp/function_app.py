@@ -13,7 +13,6 @@ AZURE_CONTAINER_NAME, DATA_DIR) comes from the Function App's application settin
 import logging
 
 import azure.functions as func
-
 import fetch_co2
 import fetch_news
 
@@ -21,8 +20,10 @@ app = func.FunctionApp()
 
 
 @app.timer_trigger(
-    schedule="%NEWS_SCHEDULE%", arg_name="timer",
-    run_on_startup=False, use_monitor=True,
+    schedule="%NEWS_SCHEDULE%",
+    arg_name="timer",
+    run_on_startup=False,
+    use_monitor=True,
 )
 def news_extract(timer: func.TimerRequest) -> None:
     logging.info("News extract: start")
@@ -31,8 +32,10 @@ def news_extract(timer: func.TimerRequest) -> None:
 
 
 @app.timer_trigger(
-    schedule="%CO2_SCHEDULE%", arg_name="timer",
-    run_on_startup=False, use_monitor=True,
+    schedule="%CO2_SCHEDULE%",
+    arg_name="timer",
+    run_on_startup=False,
+    use_monitor=True,
 )
 def co2_extract(timer: func.TimerRequest) -> None:
     logging.info("CO2 extract: start")

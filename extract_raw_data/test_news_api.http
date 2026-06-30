@@ -1,0 +1,7 @@
+GET https://newsapi.org/v2/everything
+    ?q=%22solar%20energy%22%20OR%20%22electric%20vehicle%22%20OR%20%22nuclear%20energy%22
+    &searchIn=title,description
+    &language=en
+    &sortBy=publishedAt
+    &pageSize=100
+    &apiKey=ad81fd79dac6419b97511a8f81bf4c27
