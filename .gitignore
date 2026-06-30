@@ -25,10 +25,12 @@ Pipfile.lock
 .env.*
 !.env.example
 *.env
+# REST Client (.http) files often contain API keys inline
+*.http
 
-# Local data landing zone (raw JSON before upload)
-/data/*
-!/data/.gitkeep
+# Local data landing zone (raw JSON before upload) — any subproject's data/
+**/data/*
+!**/data/.gitkeep
 
 # VS Code / IDE / tooling
 .vscode/*
